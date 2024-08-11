@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fetch File Information</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            padding: 0;
+            background-color: #f4f4f4;
+        }
+        .container {
+            max-width: 600px;
+            margin: auto;
+            background: #fff;
+            padding: 20px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        input {
+            width: 100%;
+            padding: 10px;
+            margin-bottom: 10px;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        button {
+            width: 100%;
+            padding: 10px;
+            background-color: #007bff;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .file-info {
+            margin-top: 20px;
+        }
+        .file-info img {
+            max-width: 100%;
+            margin-bottom: 10px;
+        }
+        .error {
+            color: red;
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Fetch File Information</h1>
+        <div>
+            <label for="fileLink">Enter File Link:</label>
+            <input type="text" id="fileLink" placeholder="https://example.com/file">
+        </div>
+        <button onclick="fetchFileData()">Fetch Info</button>
+        <div id="error" class="error"></div>
+        <div id="fileInfo" class="file-info"></div>
+    </div>
+
+    <script>
+        async function fetchFileData() {
+            const fileLink = document.getElementById('fileLink').value;
+            const errorDiv = document.getElementById('error');
+            const fileInfoDiv = document.getElementById('fileInfo');
+            
+            errorDiv.textContent = '';
+            fileInfoDiv.innerHTML = '';
+
+            if (!fileLink) {
+                errorDiv.textContent = 'Please enter a file link.';
+                return;
+            }
+
+            try {
+                const response = await fetch(`/get-file-data?data=${encodeURIComponent(fileLink)}`);
+                const data = await response.json();
+
+                if (response.status !== 200) {
+                    throw new Error(data.error || 'Failed to fetch file information');
+                }
+
+                fileInfoDiv.innerHTML = `
+                    <img src="${data.thumb}" alt="File Thumbnail">
+                    <p><strong>File Name:</strong> ${data.file_name}</p>
+                    <p><strong>Size:</strong> ${data.size}</p>
+                    <p><strong>Direct Link:</strong> <a href="${data.direct_link}" target="_blank" rel="noopener noreferrer">Download</a></p>
+                `;
+            } catch (error) {
+                errorDiv.textContent = error.message;
+            }
+        }
+    </script>
+
+    <script>
+        const express = require('express');
+        const axios = require('axios');
+        const app = express();
+        const path = require('path');
+
+        const COOKIE = 'YOUR_COOKIE_HERE';
+
+        function getFormattedSize(sizeBytes) {
+            let size, unit;
+
+            if (sizeBytes >= 1024 * 1024) {
+                size = sizeBytes / (1024 * 1024);
+                unit = 'MB';
+            } else if (sizeBytes >= 1024) {
+                size = sizeBytes / 1024;
+                unit = 'KB';
+            } else {
+                size = sizeBytes;
+                unit = 'bytes';
+            }
+
+            return `${size.toFixed(2)} ${unit}`;
+        }
+
+        function findBetween(str, start, end) {
+            const startIndex = str.indexOf(start) + start.length;
+            const endIndex = str.indexOf(end, startIndex);
+            return str.substring(startIndex, endIndex);
+        }
+
+        app.get('/', (req, res) => {
+            res.sendFile(path.join(__dirname, 'index.html'));
+        });
+
+        app.get('/get-file-data', async (req, res) => {
+            const link = req.query.data;
+
+            if (!link) {
+                return res.status(400).json({ error: 'Missing data' });
+            }
+
+            const axiosInstance = axios.create({
+                headers: {
+                    Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'Accept-Language': 'en-US,en;q=0.9,hi;q=0.8',
+                    Connection: 'keep-alive',
+                    DNT: '1',
+                    Host: 'www.terabox.app',
+                    'Sec-Fetch-Dest': 'document',
+                    'Sec-Fetch-Mode': 'navigate',
+                    'Sec-Fetch-Site': 'none',
+                    'Sec-Fetch-User': '?1',
+                    'Upgrade-Insecure-Requests': '1',
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                    'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                    Cookie: COOKIE,
+                    'sec-ch-ua-mobile': '?0',
+                    'sec-ch-ua-platform': '"Windows"',
+                },
+            });
+
+            try {
+                const tempReq = await axiosInstance.get(link);
+                const { searchParams: requestUrl, href } = new URL(tempReq.request.res.responseUrl);
+                const jsToken = findBetween(tempReq.data, 'fn%28%22', '%22%29');
+                const logid = findBetween(tempReq.data, 'dp-logid=', '&');
+                const bdstoken = findBetween(tempReq.data, 'bdstoken":"', '"');
+
+                if (!jsToken || !logid || !bdstoken) {
+                    return res.status(400).json({ error: 'Invalid response' });
+                }
+
+                const surl = requestUrl.get('surl');
+                const params = {
+                    app_id: '250528',
+                    web: '1',
+                    channel: 'dubox',
+                    clienttype: '0',
+                    jsToken: jsToken,
+                    'dp-logid': logid,
+                    page: '1',
+                    num: '20',
+                    by: 'name',
+                    order: 'asc',
+                    site_referer: href,
+                    shorturl: surl,
+                    root: '1,',
+                };
+
+                const req2 = await axiosInstance.get('https://www.terabox.app/share/list', { params });
+                const responseData2 = req2.data;
+
+                if (!responseData2 || !responseData2.list || responseData2.errno) {
+                    return res.status(400).json({ error: 'Unknown Error' });
+                }
+
+                const directLinkResponse = await axiosInstance.head(responseData2.list[0].dlink, {
+                    withCredentials: false,
+                });
+                const direct_link = directLinkResponse.request.res.responseUrl;
+
+                const data = {
+                    file_name: responseData2.list[0].server_filename,
+                    link: responseData2.list[0].dlink,
+                    direct_link: direct_link,
+                    thumb: responseData2.list[0].thumbs.url3,
+                    size: getFormattedSize(parseInt(responseData2.list[0].size)),
+                    sizebytes: parseInt(responseData2.list[0].size),
+                };
+
+                return res.status(200).json(data);
+            } catch (error) {
+                return res.status(400).json({ error: 'Unknown Error' });
+            }
+        });
+
+        app.listen(3000, () => {
+            console.log('Server running at http://localhost:3000');
+        });
+    </script>
+</body>
+</html>
